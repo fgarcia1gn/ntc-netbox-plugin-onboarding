@@ -98,7 +98,7 @@ class OnboardingManager:
             password=self.password,
             secret=self.secret,
             napalm_driver=otm.napalm_driver,
-            optional_args=otm.optional_args or settings.NAPALM_ARGS,
+            optional_args=otm.optional_args or settings.PLUGINS_CONFIG['netbox_napalm_plugin']['NAPALM_ARGS']
         )
 
         netdev.get_onboarding_facts()
