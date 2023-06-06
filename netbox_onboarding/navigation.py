@@ -29,13 +29,6 @@ menu_items = (
                 color=ButtonColorChoices.GREEN,
                 permissions=["netbox_onboarding.add_onboardingtask"],
             ),
-            PluginMenuButton(
-                link="plugins:netbox_onboarding:onboardingtask_import",
-                title="Bulk Onboard",
-                icon_class="mdi mdi-database-import-outline",
-                color=ButtonColorChoices.BLUE,
-                permissions=["netbox_onboarding.add_onboardingtask"],
-            ),
         ),
     ),
 )
