@@ -87,7 +87,7 @@ class OnboardingManager:
         otm = OnboardingTaskManager(ot)
 
         self.username = username or settings.PLUGINS_CONFIG['netbox_napalm_plugin']['NAPALM_USERNAME']
-        self.password = username or settings.PLUGINS_CONFIG['netbox_napalm_plugin']['NAPALM_PASSWORD']
+        self.password = password or settings.PLUGINS_CONFIG['netbox_napalm_plugin']['NAPALM_PASSWORD']
         self.secret = secret or otm.optional_args.get("secret", None) or settings.PLUGINS_CONFIG['netbox_napalm_plugin']['NAPALM_ARGS'].get("secret", None)
 
         netdev = NetdevKeeper(
