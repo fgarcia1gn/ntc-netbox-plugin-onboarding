@@ -87,6 +87,8 @@ class NetboxKeeper:
         netdev_netmiko_device_type=None,
         onboarding_class=None,
         driver_addon_result=None,
+        netdev_ifs=None,
+        netdev_data_ifs=None,
     ):
         """Create an instance and initialize the managed attributes that are used throughout the onboard processing.
 
@@ -137,6 +139,11 @@ class NetboxKeeper:
         self.onboarded_device = None
         self.nb_mgmt_ifname = None
         self.nb_primary_ip = None
+        self.netdev_ifs = netdev_ifs
+        self.netdev_data_ifs = netdev_data_ifs
+        self.nb_ifname = None
+        self.nb_ip = None
+        self.parent_ifname = []
 
     def ensure_onboarded_device(self):
         """Lookup if the device already exists in the NetBox.
@@ -402,7 +409,11 @@ class NetboxKeeper:
     def ensure_interface(self):
         """Ensures that the interface associated with the mgmt_ipaddr exists and is assigned to the device."""
         if self.netdev_mgmt_ifname:
-            self.nb_mgmt_ifname, _ = Interface.objects.get_or_create(name=self.netdev_mgmt_ifname, device=self.device)
+            self.nb_mgmt_ifname, created = Interface.objects.get_or_create(name=self.netdev_mgmt_ifname, device=self.device)
+            if created:
+                self.nb_mgmt_ifname.type = "virtual"
+                self.nb_mgmt_ifname.save()
+                
 
     def ensure_primary_ip(self):
         """Ensure mgmt_ipaddr exists in IPAM, has the device interface, and is assigned as the primary IP address."""
@@ -421,6 +432,53 @@ class NetboxKeeper:
             self.device.primary_ip4 = self.nb_primary_ip
             self.device.save()
 
+            
+    def ensure_physical_interfaces_data(self):
+        """Ensures that all the physical interfaces have their MAC address and MTU."""
+        if self.netdev_data_ifs:
+            for if_name, if_values in self.netdev_data_ifs.items():
+                try:
+                    nb_ifname = Interface.objects.get(name=if_name, device=self.device)
+                    if nb_ifname.type != "virtual":
+                        nb_ifname.mac_address = if_values.get('mac_address')
+                    if if_values.get('mtu'):
+                        nb_ifname.mtu = if_values.get('mtu')
+                    nb_ifname.save()
+                    self.parent_ifname.append(str(nb_ifname))
+                except Interface.DoesNotExist:
+                    pass
+
+            
+    
+    def ensure_interfaces_with_ipaddr(self):
+        """Ensures that all the interfaces with ipaddr exists and are assigned to the device."""
+        if self.netdev_ifs and self.netdev_data_ifs:
+            for if_name, if_values in self.netdev_data_ifs.items():
+                if if_name in self.netdev_ifs and if_name != self.netdev_mgmt_ifname:
+                    self.nb_ifname, created  = Interface.objects.get_or_create(name=if_name, device=self.device, mtu=if_values['mtu'])
+                    if_addr = list(self.netdev_ifs[if_name]['ipv4'].keys())[0]
+                    if_addr_prefix = self.netdev_ifs[if_name][list(self.netdev_ifs[if_name].keys())[0]][if_addr]["prefix_length"]
+                    self.nb_ip, _ = IPAddress.objects.get_or_create(address=f"{if_addr}/{if_addr_prefix}")
+                    logger.info("ASSIGN: IP address %s to %s", self.nb_ip.address, self.nb_ifname.name)
+                    self.nb_ifname.ip_addresses.add(self.nb_ip)
+                    # Configure subinterfaces as type virtual and associate them to its parent interface when appropiate.
+                    if created:
+                        self.nb_ifname.type = "virtual"
+                        for parent_ifname in self.parent_ifname:
+                            if self.netdev_vendor == 'Mikrotik':
+                                if re.search(re.escape(parent_ifname), self.nb_ifname.name):
+                                    parent_interface = Interface.objects.get(name=parent_ifname)
+                                    self.nb_ifname.parent = parent_interface
+                            else:
+                                if re.search(re.escape(parent_ifname+"."), self.nb_ifname.name):
+                                    parent_interface = Interface.objects.get(name=parent_ifname)
+                                    self.nb_ifname.parent = parent_interface
+                    self.nb_ifname.save()
+    
+ 
+
+
+
     def ensure_device(self):
         """Ensure that the device represented by the DevNetKeeper exists in the NetBox system."""
         self.ensure_onboarded_device()
@@ -434,3 +492,6 @@ class NetboxKeeper:
         if PLUGIN_SETTINGS["create_management_interface_if_missing"]:
             self.ensure_interface()
             self.ensure_primary_ip()
+
+        self.ensure_physical_interfaces_data()
+        self.ensure_interfaces_with_ipaddr()
